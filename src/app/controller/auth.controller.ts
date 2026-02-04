@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { User } from "../models/user.model";
-import { generateToken } from "../utils/jwt";
+import { generateToken, verifyToken } from "../utils/jwt";
 import bcrypt from "bcryptjs";
 
 
@@ -60,6 +60,32 @@ const credentialLogin = async (req: Request, res: Response) => {
     return res.status(500).json({ message: "Server error" });
   }
 };
+const getUser= async(req: Request, res: Response) => {
+   try {
+      const token = req?.cookies?.refreshToken;
+         if (!token) {
+           return res.status(401).json({ message: "Unauthorized, no token provided" });
+         }
+     
+         const decoded = verifyToken(token, process.env.JWT_REFRESH_SECRET || "secretrefresh");
+         const userId = (decoded as any).userId;
+         const user = await User.findById(userId);
+         
+         if (!user) {
+           return res.status(404).json({ message: "User not found" });
+         }
+         return res.status(200).json({
+            email: user.email,
+          });
+
+     
+    
+   } catch (error) {
+    
+      console.log(error);
+      return res.status(500).json({ message: "Internal server error", error });
+   }
+  }
 
 const logout = async (req: Request, res: Response) => {
   try {
@@ -84,4 +110,4 @@ const logout = async (req: Request, res: Response) => {
   }
 };
 
-export const authController = { credentialLogin, logout };
+export const authController = { credentialLogin, getUser, logout };

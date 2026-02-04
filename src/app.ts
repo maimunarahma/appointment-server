@@ -9,8 +9,8 @@ const app = express();
 
 const allowedOrigins = [
   "http://localhost:3000",
- 
   process.env.FRONTEND_URL,
+  "http://localhost:8080",  
 ].filter(Boolean) as string[];
 
 console.log("ENV:", process.env.NODE_ENV, "ALLOWED_ORIGINS:", allowedOrigins);

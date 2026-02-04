@@ -8,17 +8,23 @@ import { Log } from "../models/log.model";
 
 // Helper: Parse time string like "10:00 AM" to Date
 const parseTimeString = (timeStr: string, date: Date): Date => {
-  const dateObj = new Date(date);
+  const dateObj = new Date(date.getTime()); // Create a new copy, don't mutate
   const timeParts = timeStr.match(/(\d+):(\d+)\s*(AM|PM|am|pm)/i);
   
   if (!timeParts) {
-    throw new Error(`Invalid time format: ${timeStr}`);
+    throw new Error(`Invalid time format: ${timeStr}. Expected format: HH:MM AM/PM`);
   }
   
-  let hours = parseInt(timeParts[1]);
-  const minutes = parseInt(timeParts[2]);
+  let hours = parseInt(timeParts[1], 10);
+  const minutes = parseInt(timeParts[2], 10);
   const period = timeParts[3].toUpperCase();
   
+  // Validate hours and minutes
+  if (hours < 1 || hours > 12 || minutes < 0 || minutes > 59) {
+    throw new Error(`Invalid time values in: ${timeStr}`);
+  }
+  
+  // Convert to 24-hour format
   if (period === 'PM' && hours !== 12) {
     hours += 12;
   } else if (period === 'AM' && hours === 12) {
@@ -129,22 +135,74 @@ const createAppointment = async (req: Request, res: Response) => {
 
     let start: Date;
     let end: Date;
+    let appointmentDate: Date;
     
-    // Get appointment date (default to today if not provided)
-    const appointmentDate = date ? new Date(date) : new Date();
-    appointmentDate.setHours(0, 0, 0, 0);
-    
-    if (startTime && endTime) {
-      if (typeof startTime === 'string' && (startTime.includes('AM') || startTime.includes('PM') || startTime.includes('am') || startTime.includes('pm'))) {
-        // Parse time string like "10:00 AM"
-        start = parseTimeString(startTime, appointmentDate);
-        end = parseTimeString(endTime, appointmentDate);
+    try {
+      // Get appointment date (default to today if not provided)
+      appointmentDate = date ? new Date(date) : new Date();
+      appointmentDate.setHours(0, 0, 0, 0);
+      
+      if (!startTime || !endTime) {
+        return res.status(400).json({ 
+          message: "startTime and endTime are required",
+          examples: [
+            { startTime: "10:00 AM", endTime: "10:30 AM" },
+            { startTime: "10:00", endTime: "10:30" }
+          ]
+        });
+      }
+
+      // Handle different time formats
+      if (typeof startTime === 'string' && typeof endTime === 'string') {
+        // Check if it's 12-hour format (with AM/PM)
+        if (startTime.includes('AM') || startTime.includes('PM') || startTime.includes('am') || startTime.includes('pm')) {
+          start = parseTimeString(startTime, appointmentDate);
+          end = parseTimeString(endTime, appointmentDate);
+        } 
+        // Handle 24-hour format (HH:MM)
+        else if (startTime.match(/^\d{1,2}:\d{2}$/) && endTime.match(/^\d{1,2}:\d{2}$/)) {
+          const [startHours, startMinutes] = startTime.split(':').map(Number);
+          const [endHours, endMinutes] = endTime.split(':').map(Number);
+          
+          start = new Date(appointmentDate.getTime());
+          start.setHours(startHours, startMinutes, 0, 0);
+          
+          end = new Date(appointmentDate.getTime());
+          end.setHours(endHours, endMinutes, 0, 0);
+        } 
+        else {
+          return res.status(400).json({ 
+            message: "Invalid time format",
+            received: { startTime, endTime },
+            expected: "Format: 'HH:MM AM/PM' or 'HH:MM' (24-hour)"
+          });
+        }
       } else {
         start = new Date(startTime);
         end = new Date(endTime);
       }
-    } else {
-      return res.status(400).json({ message: "startTime and endTime are required" });
+
+      // Validate parsed dates
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+        return res.status(400).json({ 
+          message: "Invalid date format",
+          received: { startTime, endTime },
+          expected: "Format: 'HH:MM AM/PM', 'HH:MM', or ISO date string"
+        });
+      }
+
+      // Check if end time is after start time
+      if (end <= start) {
+        return res.status(400).json({ 
+          message: "End time must be after start time" 
+        });
+      }
+    } catch (error: any) {
+      return res.status(400).json({ 
+        message: "Invalid time format",
+        error: error.message,
+        expected: "Format: 'HH:MM AM/PM' or 'HH:MM' (24-hour)"
+      });
     }
 
     let assignedStaff = null;
