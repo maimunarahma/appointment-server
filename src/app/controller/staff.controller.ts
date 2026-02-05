@@ -33,13 +33,13 @@ const createStaff = async (req: Request, res: Response) => {
         
     }
 }
-const getStuff = async (req: Request, res: Response) => {
+const getStaff = async (req: Request, res: Response) => {
      try {
         const staffs = await Staff.find();
-        return res.status(200).json({ staffs });
+        return res.status(200).json( staffs );
      } catch (error) {
         return res.status(500).json({ message: "Internal server error", error });
      }
     }
 
-export const staffController= {createStaff, getStuff}
+export const staffController= {createStaff, getStaff}
