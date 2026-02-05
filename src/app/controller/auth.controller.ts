@@ -60,50 +60,36 @@ const credentialLogin = async (req: Request, res: Response) => {
     return res.status(500).json({ message: "Server error" });
   }
 };
-const getUser= async(req: Request, res: Response) => {
-   try {
-      const token = req?.cookies?.refreshToken;
-         if (!token) {
-           return res.status(401).json({ message: "Unauthorized, no token provided" });
-         }
-     
-         const decoded = verifyToken(token, process.env.JWT_REFRESH_SECRET || "secretrefresh");
-         const userId = (decoded as any).userId;
-         const user = await User.findById(userId);
-         
-         if (!user) {
-           return res.status(404).json({ message: "User not found" });
-         }
-           const payload = {
-      userId: user._id,
-      email: user.email
-    };
-          const refreshToken = generateToken(payload, process.env.JWT_REFRESH_SECRET || "secretrefresh", "30d");
-
-    // Cookie configuration that works in both dev and production
-    const isProduction = process.env.NODE_ENV === "production";
-    const cookieOptions = {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? "none" as const : "lax" as const,
-      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-      path: "/",
-    };
-
-    res.cookie("refreshToken", refreshToken, cookieOptions);
-         return res.status(200).json({
-            email: user.email,
-          });
-
-     
+const getUser = async(req: Request, res: Response) => {
+  try {
+    const token = req?.cookies?.refreshToken;
+    console.log("Token received:", token ? "✅ Present" : "❌ Missing");
     
-   } catch (error) {
+    if (!token) {
+      return res.status(401).json({ message: "Unauthorized, no token provided" });
+    }
+
+    const decoded = verifyToken(token, process.env.JWT_REFRESH_SECRET || "secretrefresh");
+    const userId = (decoded as any).userId;
+    const user = await User.findById(userId);
     
-      console.log(error);
-      return res.status(500).json({ message: "Internal server error", error });
-   }
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Return user data (cookie already exists, no need to set again)
+    return res.status(200).json({
+      email: user.email,
+      id: user._id
+    });
+  } catch (error: any) {
+    console.error("Get user error:", error);
+    return res.status(401).json({ message: "Invalid or expired token" });
   }
+};
 
+     
+    
 const logout = async (req: Request, res: Response) => {
   try {
     // Match the same cookie configuration as login
