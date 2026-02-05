@@ -31,13 +31,13 @@ const registerUser = async (req: Request, res: Response) => {
     const accessToken = generateToken(JwtPayload, process.env.JWT_SECRET || "secret", "1d");
     const refreshToken = generateToken(JwtPayload, process.env.JWT_REFRESH_SECRET || "secretrefresh", "30d");
 
-    // Set refresh token cookie with proper configuration
+    // Set refresh token cookie for cross-origin requests
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      secure: true,
+      sameSite: "none" as const,
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-      path: "/", // Ensure cookie is available for all paths
+      path: "/",
     });
 
     return res.status(201).json({

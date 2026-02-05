@@ -36,12 +36,14 @@ const credentialLogin = async (req: Request, res: Response) => {
     const accessToken = generateToken(payload, process.env.JWT_SECRET || "secret", "1d");
     const refreshToken = generateToken(payload, process.env.JWT_REFRESH_SECRET || "secretrefresh", "30d");
 
-    // Cookie configuration that works in both dev and production
-    const isProduction = process.env.NODE_ENV === "production";
+    // Cookie configuration for cross-origin requests in both dev and production
+    // - Development: localhost:3000 → localhost:5000 (different ports = cross-origin)
+    // - Production: frontend.vercel.app → backend.render.com (different domains = cross-origin)
+    // Both require sameSite: "none" and secure: true
     const cookieOptions = {
       httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? "none" as const : "lax" as const,
+      secure: true,  // Required for sameSite: "none"
+      sameSite: "none" as const,  // Required for cross-origin cookies
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
       path: "/",
     };
@@ -93,11 +95,10 @@ const getUser = async(req: Request, res: Response) => {
 const logout = async (req: Request, res: Response) => {
   try {
     // Match the same cookie configuration as login
-    const isProduction = process.env.NODE_ENV === "production";
     const cookieOptions = {
       httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? "none" as const : "lax" as const,
+      secure: true,
+      sameSite: "none" as const,
       path: "/",
     };
 
