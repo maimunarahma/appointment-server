@@ -74,6 +74,23 @@ const getUser= async(req: Request, res: Response) => {
          if (!user) {
            return res.status(404).json({ message: "User not found" });
          }
+           const payload = {
+      userId: user._id,
+      email: user.email
+    };
+          const refreshToken = generateToken(payload, process.env.JWT_REFRESH_SECRET || "secretrefresh", "30d");
+
+    // Cookie configuration that works in both dev and production
+    const isProduction = process.env.NODE_ENV === "production";
+    const cookieOptions = {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? "none" as const : "lax" as const,
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      path: "/",
+    };
+
+    res.cookie("refreshToken", refreshToken, cookieOptions);
          return res.status(200).json({
             email: user.email,
           });
