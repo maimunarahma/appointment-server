@@ -10,7 +10,7 @@ const app = express();
 const allowedOrigins = [
   "http://localhost:3000",
   process.env.FRONTEND_URL,
-  "http://localhost:8080",  
+  "http://localhost:8080",
 ].filter(Boolean) as string[];
 
 console.log("ENV:", process.env.NODE_ENV, "ALLOWED_ORIGINS:", allowedOrigins);
@@ -30,6 +30,10 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
+app.options("*", cors({
+  origin: process.env.NODE_ENV === "production" ? process.env.FRONTEND_URL : "http://localhost:3000",
+  credentials: true,
+}));
 
 // Middlewares (after CORS)
 app.use(cookieParser());
