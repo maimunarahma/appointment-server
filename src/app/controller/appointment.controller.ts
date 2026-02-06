@@ -10,27 +10,27 @@ import { Log } from "../models/log.model";
 const parseTimeString = (timeStr: string, date: Date): Date => {
   const dateObj = new Date(date.getTime()); // Create a new copy, don't mutate
   const timeParts = timeStr.match(/(\d+):(\d+)\s*(AM|PM|am|pm)/i);
-  
+
   if (!timeParts) {
     throw new Error(`Invalid time format: ${timeStr}. Expected format: HH:MM AM/PM`);
   }
-  
+
   let hours = parseInt(timeParts[1], 10);
   const minutes = parseInt(timeParts[2], 10);
   const period = timeParts[3].toUpperCase();
-  
+
   // Validate hours and minutes
   if (hours < 1 || hours > 12 || minutes < 0 || minutes > 59) {
     throw new Error(`Invalid time values in: ${timeStr}`);
   }
-  
+
   // Convert to 24-hour format
   if (period === 'PM' && hours !== 12) {
     hours += 12;
   } else if (period === 'AM' && hours === 12) {
     hours = 0;
   }
-  
+
   dateObj.setHours(hours, minutes, 0, 0);
   return dateObj;
 };
@@ -39,7 +39,7 @@ const parseTimeString = (timeStr: string, date: Date): Date => {
 const getStaffLoad = async (staffName: string, date: Date) => {
   const startOfDay = new Date(date);
   startOfDay.setHours(0, 0, 0, 0);
-  
+
   const endOfDay = new Date(date);
   endOfDay.setHours(23, 59, 59, 999);
 
@@ -110,14 +110,31 @@ const checkTimeConflict = async (staffName: string, startTime: Date, endTime: Da
 //   return staffWithLoad;
 // };
 
-// Helper: Create activity log
+// Helper: Create activity log (async but don't await - fire and forget for performance)
 const createLog = async (adminId: string, message: string) => {
-  await Log.create({ adminId, message });
+  try {
+    await Log.create({ adminId, message });
+  } catch (error) {
+    console.error("Failed to create log:", error);
+  }
+};
+
+// Helper: Input validation
+const validateAppointmentInput = (data: any) => {
+  const errors: string[] = [];
+  
+  if (!data.customerName?.trim()) errors.push("customerName is required");
+  if (!data.service?.trim()) errors.push("service is required");
+  if (!data.startTime) errors.push("startTime is required");
+  if (!data.endTime) errors.push("endTime is required");
+  
+  return errors.length > 0 ? errors : null;
 };
 
 // CREATE APPOINTMENT
 const createAppointment = async (req: Request, res: Response) => {
   try {
+    // 1. Authentication
     const token = req?.cookies?.refreshToken;
     if (!token) {
       return res.status(401).json({ message: "Unauthorized, no token provided" });
@@ -125,56 +142,47 @@ const createAppointment = async (req: Request, res: Response) => {
 
     const decoded = verifyToken(token, process.env.JWT_REFRESH_SECRET || "secretrefresh");
     const userId = (decoded as any).userId;
-    const user = await User.findById(userId);
+
+    // 2. Input Validation
+    const { customerName, service, staff, date, startTime, endTime } = req.body;
     
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
+    const validationErrors = validateAppointmentInput(req.body);
+    if (validationErrors) {
+      return res.status(400).json({ 
+        message: "Validation failed", 
+        errors: validationErrors 
+      });
     }
 
-    const { customerName, service, staff, date, startTime, endTime } = req.body;
+    // 3. Parse and Validate Times
+    const appointmentDate = date ? new Date(date) : new Date();
+    appointmentDate.setHours(0, 0, 0, 0);
 
     let start: Date;
     let end: Date;
-    let appointmentDate: Date;
-    
-    try {
-      // Get appointment date (default to today if not provided)
-      appointmentDate = date ? new Date(date) : new Date();
-      appointmentDate.setHours(0, 0, 0, 0);
-      
-      if (!startTime || !endTime) {
-        return res.status(400).json({ 
-          message: "startTime and endTime are required",
-          examples: [
-            { startTime: "10:00 AM", endTime: "10:30 AM" },
-            { startTime: "10:00", endTime: "10:30" }
-          ]
-        });
-      }
 
-      // Handle different time formats
+    try {
       if (typeof startTime === 'string' && typeof endTime === 'string') {
-        // Check if it's 12-hour format (with AM/PM)
+        // 12-hour format (AM/PM)
         if (startTime.includes('AM') || startTime.includes('PM') || startTime.includes('am') || startTime.includes('pm')) {
           start = parseTimeString(startTime, appointmentDate);
           end = parseTimeString(endTime, appointmentDate);
-        } 
-        // Handle 24-hour format (HH:MM)
+        }
+        // 24-hour format (HH:MM)
         else if (startTime.match(/^\d{1,2}:\d{2}$/) && endTime.match(/^\d{1,2}:\d{2}$/)) {
           const [startHours, startMinutes] = startTime.split(':').map(Number);
           const [endHours, endMinutes] = endTime.split(':').map(Number);
-          
+
           start = new Date(appointmentDate.getTime());
           start.setHours(startHours, startMinutes, 0, 0);
-          
+
           end = new Date(appointmentDate.getTime());
           end.setHours(endHours, endMinutes, 0, 0);
-        } 
+        }
         else {
-          return res.status(400).json({ 
+          return res.status(400).json({
             message: "Invalid time format",
-            received: { startTime, endTime },
-            expected: "Format: 'HH:MM AM/PM' or 'HH:MM' (24-hour)"
+            expected: "Format: 'HH:MM AM/PM' or 'HH:MM'"
           });
         }
       } else {
@@ -182,93 +190,116 @@ const createAppointment = async (req: Request, res: Response) => {
         end = new Date(endTime);
       }
 
-      // Validate parsed dates
+      // Validate dates
       if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-        return res.status(400).json({ 
-          message: "Invalid date format",
-          received: { startTime, endTime },
-          expected: "Format: 'HH:MM AM/PM', 'HH:MM', or ISO date string"
-        });
+        return res.status(400).json({ message: "Invalid date/time values" });
       }
 
-      // Check if end time is after start time
       if (end <= start) {
-        return res.status(400).json({ 
-          message: "End time must be after start time" 
-        });
+        return res.status(400).json({ message: "End time must be after start time" });
       }
     } catch (error: any) {
-      return res.status(400).json({ 
-        message: "Invalid time format",
-        error: error.message,
-        expected: "Format: 'HH:MM AM/PM' or 'HH:MM' (24-hour)"
+      return res.status(400).json({
+        message: "Time parsing error",
+        error: error.message
       });
     }
 
-    let assignedStaff = null;
-    let appointmentStatus = 'Waiting';
-    let queuePosition = null;
+    // 4. Database Operations - Use Promise.all for parallel queries
+    const [user, allStaff] = await Promise.all([
+      User.findById(userId).lean(), // .lean() for better performance
+      Staff.find({ status: 'Available' }).lean()
+    ]);
 
-    // If staff is provided, try to assign
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // 5. Staff Assignment Logic
+    let assignedStaff: string | null = null;
+    let appointmentStatus: 'Scheduled' | 'Waiting' = 'Waiting';
+    let queuePosition: number | null = null;
+
     if (staff) {
-      const staffDoc = await Staff.findOne({ name: staff });
+      // User requested specific staff
+      const staffDoc = allStaff.find(s => s.name === staff);
       
       if (!staffDoc) {
         return res.status(404).json({ message: `Staff '${staff}' not found` });
       }
 
-      // Check if staff is on leave
-      if (staffDoc.status !== 'Available') {
-        // Staff on leave - add to waiting queue
-        assignedStaff = null;
-        appointmentStatus = 'Waiting';
-        const queueCount = await Appointment.countDocuments({ status: 'Waiting' });
-        queuePosition = queueCount + 1;
-        console.log(`Staff on leave. Adding to queue at position ${queuePosition}`);
-        // Continue to create appointment below (don't return here)
-      } else {
-        // Check daily capacity
-        const load = await getStaffLoad(staffDoc.name, start);
-        console.log("load is", load)
+      // Check staff availability
+      const load = await getStaffLoad(staff, start);
+      
+      if (load?.available) {
+        // Check time conflicts
+        const conflict = await checkTimeConflict(staff, start, end);
         
-        if (!load?.available) {
-          // Capacity exceeded - add to waiting queue
-          assignedStaff = null;
-          appointmentStatus = 'Waiting';
-          const queueCount = await Appointment.countDocuments({ status: 'Waiting' });
-          queuePosition = queueCount + 1;
-          console.log(`Staff at capacity (${load?.current}/${load?.capacity}). Adding to queue at position ${queuePosition}`);
-          // Continue to create appointment below (don't return here)
-        } else {
-          // Check time conflict
-          const conflict = await checkTimeConflict(staffDoc.name, start, end);
-          if (conflict) {
-            return res.status(409).json({ 
-              message: `${staffDoc.name} already has an appointment at this time`,
-              conflict: {
-                customerName: conflict.customerName,
-                startTime: conflict.startTime,
-                endTime: conflict.endTime
-              }
-            });
-          }
-
-          // All checks passed - assign staff
-          assignedStaff = staffDoc.name;
-          appointmentStatus = 'Scheduled';
+        if (conflict) {
+          return res.status(409).json({
+            message: `${staff} already has an appointment at this time. choose another time or staff.`,
+            conflict: {
+              customerName: conflict.customerName,
+              time: `${conflict.startTime.toLocaleTimeString()} - ${conflict.endTime ? conflict.endTime.toLocaleTimeString() : 'N/A'}`
+            }
+          });
         }
+
+        // All checks passed - assign staff
+        assignedStaff = staff;
+        appointmentStatus = 'Scheduled';
+      } else {
+        // Staff at capacity - add to queue
+        const queueCount = await Appointment.countDocuments({ 
+          adminId: userId,
+          status: 'Waiting' 
+        });
+        queuePosition = queueCount + 1;
       }
     } else {
-      // No staff provided - add to queue
-      const queueCount = await Appointment.countDocuments({ status: 'Waiting' });
-      queuePosition = queueCount + 1;
+      // Auto-assign available staff
+      const eligibleStaff = allStaff.filter(s => s.serviceType === service);
+
+      if (eligibleStaff.length === 0) {
+        // No staff available - add to queue
+        const queueCount = await Appointment.countDocuments({ 
+          adminId: userId,
+          status: 'Waiting' 
+        });
+        queuePosition = queueCount + 1;
+      } else {
+        // Find first available staff with capacity
+        for (const staffMember of eligibleStaff) {
+          const load = await getStaffLoad(staffMember.name, start);
+          
+          if (load?.available) {
+            const conflict = await checkTimeConflict(staffMember.name, start, end);
+            
+            if (!conflict) {
+              assignedStaff = staffMember.name;
+              appointmentStatus = 'Scheduled';
+              break;
+            }
+          }
+        }
+
+        // If no staff found, add to queue
+        if (!assignedStaff) {
+          const queueCount = await Appointment.countDocuments({ 
+            adminId: userId,
+            status: 'Waiting' 
+          });
+          queuePosition = queueCount + 1;
+        }
+      }
     }
 
+    // 6. Create Appointment
     const appointment = await Appointment.create({
       adminId: user._id,
-      customerName,
-      service,
-      staff: assignedStaff,  // Will be staff name if assigned, null if in queue
+      customerName: customerName.trim(),
+      service: service.trim(),
+      staff: assignedStaff,
       date: appointmentDate,
       startTime: start,
       endTime: end,
@@ -276,32 +307,41 @@ const createAppointment = async (req: Request, res: Response) => {
       queuePosition
     });
 
-    // Don't populate since we're storing names not IDs
-    // await appointment.populate(['service', 'staff']);
+    // 7. Activity Log (fire and forget - don't block response)
+    createLog(
+      userId,
+      assignedStaff 
+        ? `Appointment for "${customerName}" assigned to ${assignedStaff}`
+        : `Appointment for "${customerName}" added to queue (Position: ${queuePosition})`
+    ).catch(err => console.error("Log creation failed:", err));
 
-    // Create activity log
-    if (assignedStaff) {
-      await createLog(user._id.toString(), 
-        `Appointment for "${customerName}" assigned to ${assignedStaff}`
-      );
-    } else {
-      await createLog(user._id.toString(), 
-        `Appointment for "${customerName}" added to waiting queue (Position: ${queuePosition})`
-      );
-    }
-
-    return res.status(201).json({ 
-      message: assignedStaff ? "Appointment created successfully" : "Appointment added to waiting queue",
-      appointment 
+    // 8. Success Response
+    return res.status(201).json({
+      success: true,
+      message: assignedStaff 
+        ? "Appointment created successfully" 
+        : `Added to waiting queue at position ${queuePosition}`,
+      appointment: {
+        id: appointment._id,
+        customerName: appointment.customerName,
+        service: appointment.service,
+        staff: appointment.staff,
+        date: appointment.date,
+        startTime: appointment.startTime,
+        endTime: appointment.endTime,
+        status: appointment.status,
+        queuePosition: appointment.queuePosition
+      }
     });
 
   } catch (error: any) {
     console.error("Create appointment error:", error);
-    return res.status(500).json({ message: "Server error", error: error.message });
+    return res.status(500).json({ 
+      message: "Internal server error",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined
+    });
   }
 };
-
-
 // GET ALL APPOINTMENTS
 const getAppointments = async (req: Request, res: Response) => {
   try {
@@ -314,20 +354,20 @@ const getAppointments = async (req: Request, res: Response) => {
     const userId = (decoded as any).userId;
 
     const { date, staffId, status } = req.query;
-    
+
     const filter: any = { adminId: userId };
-    
+
     if (date) {
       const queryDate = new Date(date as string);
       const startOfDay = new Date(queryDate.setHours(0, 0, 0, 0));
       const endOfDay = new Date(queryDate.setHours(23, 59, 59, 999));
       filter.date = { $gte: startOfDay, $lte: endOfDay };
     }
-    
+
     if (staffId) {
       filter.staff = staffId;
     }
-    
+
     if (status) {
       filter.status = status;
     }
@@ -355,7 +395,7 @@ const getAppointments = async (req: Request, res: Response) => {
 
 //     const decoded = verifyToken(token, process.env.JWT_REFRESH_SECRET || "secretrefresh");
 //     const userId = (decoded as any).userId;
-    
+
 //     const { id } = req.params;
 //     const { customerName, staffId, startTime, status } = req.body;
 
@@ -398,7 +438,7 @@ const getAppointments = async (req: Request, res: Response) => {
 //         appointment.startTime = newStartTime;
 //         appointment.endTime = newEndTime;
 //       }
-      
+
 //       if (staffId) {
 //         appointment.staff = staffId;
 //         appointment.status = 'Scheduled';
@@ -435,7 +475,7 @@ const getAppointments = async (req: Request, res: Response) => {
 
 //     const decoded = verifyToken(token, process.env.JWT_REFRESH_SECRET || "secretrefresh");
 //     const userId = (decoded as any).userId;
-    
+
 //     const { id } = req.params;
 
 //     const appointment = await Appointment.findOneAndDelete({ _id: id, adminId: userId });
@@ -464,9 +504,9 @@ const getWaitingQueue = async (req: Request, res: Response) => {
     const decoded = verifyToken(token, process.env.JWT_REFRESH_SECRET || "secretrefresh");
     const userId = (decoded as any).userId;
 
-    const queue = await Appointment.find({ 
-      adminId: userId, 
-      status: 'Waiting' 
+    const queue = await Appointment.find({
+      adminId: userId,
+      status: 'Waiting'
     }).populate('service')
       .sort({ startTime: 1 });
 
@@ -488,7 +528,7 @@ const getWaitingQueue = async (req: Request, res: Response) => {
 
 //     const decoded = verifyToken(token, process.env.JWT_REFRESH_SECRET || "secretrefresh");
 //     const userId = (decoded as any).userId;
-    
+
 //     const { staffId } = req.body;
 
 //     const staff = await Staff.findById(staffId);
@@ -508,7 +548,7 @@ const getWaitingQueue = async (req: Request, res: Response) => {
 
 //     for (const appointment of queuedAppointments) {
 //       const service = appointment.service as any;
-      
+
 //       // Check if staff type matches
 //       if (service.requiredStaffType !== staff.serviceType) continue;
 
@@ -579,9 +619,9 @@ const getWaitingQueue = async (req: Request, res: Response) => {
 export const appointmentController = {
   createAppointment,
   getAppointments,
-//   updateAppointment,
-//   deleteAppointment,
+  //   updateAppointment,
+  //   deleteAppointment,
   getWaitingQueue,
-// //   assignFromQueue,
-//   getAvailableStaff
+  // //   assignFromQueue,
+  //   getAvailableStaff
 };
