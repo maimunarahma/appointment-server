@@ -353,31 +353,29 @@ const getAppointments = async (req: Request, res: Response) => {
     const decoded = verifyToken(token, process.env.JWT_REFRESH_SECRET || "secretrefresh");
     const userId = (decoded as any).userId;
 
-    const { date, staffId, status } = req.query;
+    const { date, status } = req.query;
 
     const filter: any = { adminId: userId };
 
     if (date) {
       const queryDate = new Date(date as string);
-      const startOfDay = new Date(queryDate.setHours(0, 0, 0, 0));
-      const endOfDay = new Date(queryDate.setHours(23, 59, 59, 999));
+      const startOfDay = new Date(queryDate);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(queryDate);
+      endOfDay.setHours(23, 59, 59, 999);
       filter.date = { $gte: startOfDay, $lte: endOfDay };
     }
+    const allowedStatus = ["Scheduled", "Completed", "Cancelled", "No-Show", "Queued"];
 
-    if (staffId) {
-      filter.staff = staffId;
-    }
-
-    if (status) {
-      filter.status = status;
-    }
-
+    if (status && allowedStatus.includes(status as string)) {
+  filter.status = status;
+   }
     const appointments = await Appointment.find(filter)
       .populate('service')
       .populate('staff')
       .sort({ startTime: 1 });
 
-    return res.status(200).json({ appointments });
+    return res.status(200).json(appointments);
 
   } catch (error: any) {
     console.error("Get appointments error:", error);
