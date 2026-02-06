@@ -355,6 +355,12 @@ const getAppointments = async (req: Request, res: Response) => {
 
     const { date, status } = req.query;
 
+    if(!date || !status || (!status && !date)){
+      const appoinments= await Appointment.find()
+
+      return res.status(201).json({ message: "all appoinments", appoinments });
+      
+    }
     const filter: any = { adminId: userId };
 
     if (date) {
