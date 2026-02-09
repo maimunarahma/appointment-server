@@ -42,4 +42,16 @@ const getStaff = async (req: Request, res: Response) => {
      }
     }
 
-export const staffController= {createStaff, getStaff}
+    const deleteStaff= async (req: Request, res: Response) => {
+         try {
+             const {id} = req.params;
+             const staff = await Staff.findByIdAndDelete(id);
+             if (!staff) {
+                 return res.status(404).json({ message: "Staff not found" });
+             }
+             return res.status(200).json({ message: "Staff deleted successfully" });
+         } catch (error) {
+            return res.status(500).json({ message: "Internal server error", error });
+         }
+        }
+export const staffController= {createStaff, getStaff , deleteStaff}

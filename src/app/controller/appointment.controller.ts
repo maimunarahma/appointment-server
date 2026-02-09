@@ -64,7 +64,7 @@ const getStaffLoad = async (staffName: string, date: Date) => {
 const checkTimeConflict = async (staffName: string, startTime: Date, endTime: Date, excludeAppointmentId?: string) => {
   const query: any = {
     staff: staffName,  // Query by name
-    status: { $in: ['Scheduled', 'Completed'] },
+    status: { $in: ['Scheduled'   ] },
     $or: [
       // New appointment starts during existing appointment
       { startTime: { $lte: startTime }, endTime: { $gt: startTime } },
@@ -359,7 +359,7 @@ const getAppointments = async (req: Request, res: Response) => {
       const appoinments= await Appointment.find()
 
       return res.status(201).json({ message: "all appoinments", appoinments });
-      
+
     }
     const filter: any = { adminId: userId };
 
