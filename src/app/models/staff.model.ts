@@ -6,7 +6,8 @@ const staffSchema = new mongoose.Schema({
   name: { type: String, required: true },
   serviceType: { type: String, required: true }, // e.g., "Doctor"
   dailyCapacity: { type: Number, default: 5 },
-  status: { type: String, enum: ['Available', 'On Leave'], default: 'Available' }
+  status: { type: String, enum: ['Available', 'On Leave'], default: 'Available' },
+  current : { type: Number, default: 0 , required : false } // 
 });
 
 export const Staff = mongoose.model("Staff", staffSchema);

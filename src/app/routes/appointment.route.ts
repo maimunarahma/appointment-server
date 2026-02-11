@@ -6,8 +6,8 @@ const router = Router();
 // Appointment CRUD
 router.post("/", appointmentController.createAppointment);
 router.get("/", appointmentController.getAppointments);
-// router.put("/:id", appointmentController.updateAppointment);
-// router.delete("/:id", appointmentController.deleteAppointment);
+router.put("/:id", appointmentController.updateAppointment);
+router.delete("/:id", appointmentController.deleteAppointment);
 
 // // Queue Management
 router.get("/queue", appointmentController.getWaitingQueue);

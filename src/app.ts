@@ -43,7 +43,7 @@ app.use("/", router);
 
 // Base route
 app.get("/", (_req: express.Request, res: express.Response) => {
-  res.status(200).json({ message: "Welcome to CourseMaster System" });
+  res.status(200).json({ message: "Welcome to Appointment System" });
 });
 
 export default app;
